@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>슬라임 광산 - 프로토타입</title>
+<style>
+:root{color-scheme:dark;--bg:#12161a;--rock:#1d242a;--rock2:#2a343b;--ink:#e9e4d6;--dim:#8f9ba4;--lamp:#f0b64a;--ok:#7bc47f;--line:#34404a}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 "Noto Sans KR","Malgun Gothic",system-ui,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;padding:16px 20px;border-bottom:1px solid var(--line)}
+h1{font-size:20px;margin:0 auto 0 0}
+.stat b{font-size:22px;color:var(--lamp)}
+main{display:grid;grid-template-columns:minmax(260px,1fr) minmax(280px,1.2fr) minmax(280px,1.2fr);gap:16px;padding:16px 20px;max-width:1200px;margin:auto}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+section{background:var(--rock);border:1px solid var(--line);border-radius:10px;padding:16px}
+h2{font-size:17px;margin:0 0 12px}
+.mine{text-align:center}
+#pile{width:190px;height:190px;border-radius:50%;border:0;font-size:84px;cursor:pointer;color:inherit;
+ background:radial-gradient(circle at 50% 38%,#4a4030 0,#2a343b 60%,#222b31 100%);box-shadow:0 0 40px #f0b64a33}
+#pile:active{transform:scale(.94)}
+#pile:focus-visible,button:focus-visible{outline:3px solid var(--lamp);outline-offset:2px}
+#drop{min-height:28px;margin:14px 0 4px;color:var(--lamp)}
+.dim{color:var(--dim);font-size:14px}
+.row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.ic{font-size:22px;width:30px;text-align:center}
+.nm{flex:1}
+.ct{font-variant-numeric:tabular-nums;font-size:14px;color:var(--dim)}
+button{font:inherit;color:var(--ink);background:var(--rock2);border:1px solid var(--line);border-radius:6px;padding:6px 12px;cursor:pointer}
+button:hover:not(:disabled){border-color:var(--lamp)}
+button:disabled{opacity:.45;cursor:default}
+.primary{background:var(--lamp);color:#1a1405;border-color:var(--lamp);font-weight:700}
+.pick{padding:10px 0;border-top:1px solid var(--line)}
+.pick:first-of-type{border-top:0}
+.pick .top{display:flex;align-items:center;gap:10px}
+.pick.on .nm{color:var(--lamp);font-weight:700}
+.tools{display:flex;gap:8px;margin-top:12px}
+.tools{flex-wrap:wrap}
+.bar{height:8px;background:var(--rock2);border-radius:4px;margin:10px 0;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:var(--lamp)}
+@media(prefers-reduced-motion:reduce){#pile:active{transform:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>슬라임 광산 <span class="dim">프로토타입 v0.1</span></h1>
+  <span class="stat">골드 <b id="gold">0</b></span>
+  <span class="stat dim">자동 채굴 <span id="rate">0</span>개/초</span>
+</header>
+
+<main>
+  <section class="mine">
+    <h2>광산</h2>
+    <button id="pile" aria-label="광석 더미를 클릭해서 채굴">🪨</button>
+    <div id="drop" aria-live="polite">광석 더미를 눌러 채굴하세요. 누르지 않아도 자동으로 채굴됩니다.</div>
+    
+    <div class="dim">장착한 곡괭이에 따라 나오는 광물이 달라집니다.<br>석탄이 필요하면 낮은 곡괭이로 바꿔 보세요.</div>
+  </section>
+
+  <section>
+    <h2>보관함</h2>
+    <div id="inv"></div>
+    <div class="tools">
+      <button id="sellAll" class="primary">전부 판매</button>
+      <button id="reset">초기화</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>곡괭이</h2>
+    <div id="picks"></div>
+  </section>
+
+  <section>
+    <h2>용광로</h2>
+    <div class="dim">광석 1개와 석탄 1개로 주괴 1개를 굽습니다. 슬라임을 배치하면 효과가 붙습니다.</div>
+    <div class="tools" id="smeltBtns"></div>
+    <div class="bar"><i id="smeltBar"></i></div>
+    <div id="smeltInfo"></div>
+    <div id="fxInfo" class="dim"></div>
+  </section>
+
+  <section>
+    <h2>슬라임 부화기</h2>
+    <div id="eggInfo"></div>
+    <div class="dim">같은 속성·같은 별의 슬라임 3마리가 모이면 자동으로 별 하나 높은 1마리로 합쳐집니다 (최대 ★5).</div>
+    <div class="tools"><button id="hatchBtn">부화 시작</button></div>
+    <div class="bar"><i id="hatchBar"></i></div>
+    <div id="slimes"></div>
+  </section>
+</main>
+
+<script>
+// ===== 데이터: 콘텐츠는 여기서만 수정 =====
+const ORES = {
+  stone:   {n:'돌',      i:'🪨', p:1},
+  coal:    {n:'석탄',    i:'⬛', p:3},
+  copper:  {n:'구리',    i:'🟠', p:6},
+  tin:     {n:'주석',    i:'⚪', p:8},
+  iron:    {n:'철',      i:'🔩', p:14},
+  gold:    {n:'금',      i:'🟡', p:40},
+  amethyst:{n:'자수정',  i:'🟣', p:100},
+  emerald: {n:'에메랄드',i:'🟢', p:120},
+  ruby:    {n:'루비',    i:'🔴', p:150},
+  diamond: {n:'다이아',  i:'💎', p:200},
+  copperIngot:{n:'구리 주괴', i:'🧱', p:18},
+  tinIngot:   {n:'주석 주괴', i:'🔘', p:24},
+  ironIngot:  {n:'철 주괴',   i:'⛓️', p:42},
+  goldIngot:  {n:'금 주괴',   i:'🏅', p:120},
+};
+// w: 광물별 드랍 가중치 / auto: 초당 자동 채굴 수 / cost: 제작 비용
+const PICKS = [
+  {id:'wood',    n:'나무 곡괭이',   i:'🪵', auto:0.2, w:{stone:60,coal:30,copper:10}, cost:null},
+  {id:'stone',   n:'돌 곡괭이',     i:'⛏️', auto:0.4, w:{stone:35,coal:30,copper:15,tin:15,iron:5}, cost:{gold:60,ore:{stone:20}}},
+  {id:'iron',    n:'철 곡괭이',     i:'⚒️', auto:0.7, w:{coal:20,copper:20,tin:20,iron:30,gold:10}, cost:{gold:400,ore:{iron:10,coal:10}}},
+  {id:'gold',    n:'금 곡괭이',     i:'🔱', auto:1.1, w:{coal:10,iron:25,gold:30,ruby:8,amethyst:10,emerald:8,diamond:4}, cost:{gold:2500,ore:{gold:8}}},
+  {id:'diamond', n:'다이아 곡괭이', i:'💠', auto:1.6, w:{iron:10,gold:25,diamond:20,ruby:15,emerald:15,amethyst:15}, cost:{gold:15000,ore:{diamond:3}}},
+];
+const STAR_MULT = {1:1, 2:1.5, 3:3};   // 별 등급별 판매가 배율
+const OFFLINE_CAP = 3600;               // 오프라인 진행 최대 1시간
+
+// ===== 상태 / 저장 =====
+const KEY = 'slime-mine-v1';
+const $ = s => document.querySelector(s);
+const fmt = n => Math.floor(n).toLocaleString('ko-KR');
+const fresh = () => ({v:1, gold:0, inv:{}, owned:{wood:{speed:0,luck:0}}, equip:'wood', acc:0, saved:Date.now(),
+  furnace:{t:null,job:null,star:1,busy:false,p:0}, eggs:0, hatch:{busy:false,p:0}, slimes:[], slimeEq:0});
+function load(){
+  try{ const r = localStorage.getItem(KEY); if(r){ const d = JSON.parse(r); if(d && d.v===1) return Object.assign(fresh(), d); } }catch(e){}
+  return fresh();
+}
+function save(){ try{ S.saved = Date.now(); localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+let S = load();
+
+// ===== 게임 로직 =====
+const pickDef = id => PICKS.find(p => p.id === id);
+const count = (o,s) => S.inv[o+'|'+s] || 0;
+const total = o => count(o,1)+count(o,2)+count(o,3);
+const rate = () => pickDef(S.equip).auto * (1 + S.owned[S.equip].speed + ENH_SPEED * (S.owned[S.equip].lv || 0));
+
+function weightedPick(w){            // 가중치 랜덤
+  let sum = 0; for(const k in w) sum += w[k];
+  let r = Math.random()*sum;
+  for(const k in w){ r -= w[k]; if(r < 0) return k; }
+}
+function mineOnce(silent){
+  const stat = S.owned[S.equip], lk = stat.luck + ENH_LUCK * (stat.lv || 0);
+  const ore = weightedPick(pickDef(S.equip).w);
+  const r = Math.random();
+  const star = r < 0.02 + lk*0.25 ? 3 : r < 0.12 + lk ? 2 : 1;  // 행운이 높을수록 별 등급 상승
+  S.inv[ore+'|'+star] = count(ore,star) + 1;
+  const egg = Math.random() < EGG_CHANCE; if(egg) S.eggs++;   // 슬라임 알 드랍
+  if(!silent) $('#drop').textContent = `${ORES[ore].i} ${ORES[ore].n} ${'★'.repeat(star)} 획득` + (egg ? '  🥚 슬라임 알 발견!' : '');
+}
+function sell(ore){
+  let g = 0;
+  for(const s of [1,2,3]){ g += count(ore,s) * ORES[ore].p * STAR_MULT[s]; delete S.inv[ore+'|'+s]; }
+  S.gold += Math.round(g); update();
+}
+const afford = c => !c || (S.gold >= c.gold && Object.keys(c.ore).every(o => total(o) >= c.ore[o]));
+function spend(c){
+  S.gold -= c.gold;
+  for(const o in c.ore){                           // 낮은 별부터 소모
+    let need = c.ore[o];
+    for(const s of [1,2,3]){ const k=o+'|'+s, t=Math.min(count(o,s),need); if(t){ S.inv[k]-=t; need-=t; } }
+  }
+}
+function craft(id){
+  const p = pickDef(id);
+  if(S.owned[id] || !afford(p.cost)) return;
+  if(p.cost) spend(p.cost);
+  S.owned[id] = {speed: Math.random()*0.3, luck: Math.random()*0.1, lv: 0};
+  S.best = Math.max(S.best || 0, PICKS.findIndex(q => q.id === id));   // 제작 시 랜덤 스탯
+  $('#drop').textContent = `${p.i} ${p.n} 제작 완료`; update();
+}
+
+// ===== 제련 / 슬라임 =====
+const SMELT = {copper:'copperIngot', tin:'tinIngot', iron:'ironIngot', gold:'goldIngot'};
+const SMELT_TIME = 6, HATCH_TIME = 20, EGG_CHANCE = 0.005;   // 제련 초 / 부화 초 / 채굴당 알 확률
+const EL = {
+  fire:  {n:'불',   i:'🔥', d:'제련 속도 증가'},
+  water: {n:'물',   i:'💧', d:'석탄 절약'},
+  earth: {n:'땅',   i:'🌱', d:'주괴 등급 상승 확률'},
+  wind:  {n:'바람', i:'🌪️', d:'주괴 2개 생산 확률'},
+};
+const fx = el => { const s = S.slimes[S.slimeEq]; return s && s.el === el ? s.pw : 0; };   // 배치한 슬라임의 속성 세기(1~3)
+function takeLow(o){ for(const s of [1,2,3]){ if(count(o,s) > 0){ S.inv[o+'|'+s]--; return s; } } return 0; }
+function advance(dt){
+  const F = S.furnace, H = S.hatch;
+  if(F.t && !F.busy && total(F.t) > 0 && total('coal') > 0){      // 광석 1개 + 석탄 1개로 시작
+    F.job = F.t; F.star = takeLow(F.t);
+    if(Math.random() >= 0.2 * fx('water')) takeLow('coal');
+    F.busy = true; F.p = 0;
+  }
+  if(F.busy){
+    F.p += dt * (1 + 0.5 * fx('fire'));
+    if(F.p >= SMELT_TIME){
+      let star = F.star; if(star < 3 && Math.random() < 0.15 * fx('earth')) star++;
+      const n = Math.random() < 0.15 * fx('wind') ? 2 : 1, id = SMELT[F.job];
+      S.inv[id+'|'+star] = count(id,star) + n;
+      F.busy = false; F.p = 0;
+    }
+  }
+  if(H.busy){
+    H.p += dt;
+    if(H.p >= HATCH_TIME){
+      const r = Math.random(), els = Object.keys(EL);
+      S.slimes.push({el: els[Math.floor(Math.random()*els.length)], pw: 1});   // 부화는 항상 ★1
+      mergeSlimes();
+      H.busy = false; H.p = 0;
+    }
+  }
+}
+// ===== 곡괭이 강화: 단계가 높을수록 성공확률↓, 파괴 확률↑ =====
+const ENH_MAX = 10, ENH_SPEED = 0.08, ENH_LUCK = 0.005;   // 강화 1단계당 속도 +8%, 행운 +0.5%
+// ENH[현재 단계] = {ok: 성공확률, br: 실패 시 파괴 확률}
+const ENH = [
+  {ok:1,br:0},{ok:.9,br:0},{ok:.8,br:0},{ok:.7,br:0},{ok:.6,br:0},
+  {ok:.5,br:.05},{ok:.4,br:.1},{ok:.3,br:.15},{ok:.2,br:.2},{ok:.1,br:.25},
+];
+const enhCost = (idx, lv) => Math.round(30 * (idx + 1) * Math.pow(1.6, lv));
+const bestTier = () => Math.max(S.best || 0, ...PICKS.map((p, i) => S.owned[p.id] ? i : 0));
+function enhance(id){
+  const st = S.owned[id]; if(!st) return;
+  const lv = st.lv || 0, idx = PICKS.findIndex(p => p.id === id), c = enhCost(idx, lv), e = ENH[lv], p = pickDef(id);
+  if(!e || S.gold < c) return;
+  S.gold -= c;
+  if(Math.random() < e.ok){ st.lv = lv + 1; $('#drop').textContent = `✨ ${p.n} +${lv+1} 강화 성공!`; }
+  else if(Math.random() < e.br){
+    delete S.owned[id];                                   // 파괴
+    if(!Object.keys(S.owned).length) S.owned.wood = {speed: Math.random()*0.3, luck: Math.random()*0.1, lv: 0};
+    if(!S.owned[S.equip]) S.equip = PICKS.find(q => S.owned[q.id]).id;
+    $('#drop').textContent = `💥 ${p.n}이(가) 부서졌습니다...`;
+  }
+  else $('#drop').textContent = `${p.n} 강화 실패 (+${lv} 유지)`;
+  update();
+}
+
+// ===== 슬라임 합체: 같은 속성·같은 별 MERGE_N마리 -> 별 +1 한 마리 =====
+const MERGE_N = 3, SLIME_MAX = 5;
+function mergeSlimes(){
+  let eq = S.slimes[S.slimeEq], again = true;
+  while(again){
+    again = false;
+    for(const el in EL) for(let pw = 1; pw < SLIME_MAX; pw++){
+      const same = S.slimes.filter(s => s.el === el && s.pw === pw);
+      if(same.length >= MERGE_N){
+        const gone = same.slice(0, MERGE_N), ns = {el, pw: pw + 1};
+        S.slimes = S.slimes.filter(s => !gone.includes(s)); S.slimes.push(ns);
+        if(gone.includes(eq)) eq = ns;                    // 배치 중이던 슬라임이 합쳐지면 결과물을 배치
+        $('#drop').textContent = `✨ ${EL[el].n} 슬라임 ★${pw} ${MERGE_N}마리가 ★${pw+1}로 합쳐졌습니다!`;
+        again = true;
+      }
+    }
+  }
+  S.slimeEq = Math.max(0, S.slimes.indexOf(eq));
+}
+function startHatch(){ if(S.hatch.busy || S.eggs < 1) return; S.eggs--; S.hatch.busy = true; S.hatch.p = 0; update(); }
+
+const smeltBtns = {};
+for(const o in SMELT){
+  const b = document.createElement('button'); b.textContent = `${ORES[o].i} ${ORES[o].n} 굽기`;
+  b.onclick = () => { S.furnace.t = S.furnace.t === o ? null : o; update(); };
+  $('#smeltBtns').append(b); smeltBtns[o] = b;
+}
+$('#hatchBtn').onclick = startHatch;
+let slimeSig = '';
+function renderSlimes(){
+  const box = $('#slimes'); box.innerHTML = '';
+  if(!S.slimes.length){ box.innerHTML = '<div class="dim">아직 슬라임이 없습니다.</div>'; return; }
+  S.slimes.forEach((s, i) => {
+    const row = document.createElement('div'); row.className = 'row';
+    row.innerHTML = `<span class="ic">${EL[s.el].i}</span><span class="nm">${EL[s.el].n} 슬라임 ${'★'.repeat(s.pw)}<br><span class="dim">${EL[s.el].d}</span></span><button></button>`;
+    const b = row.querySelector('button'); b.textContent = i === S.slimeEq ? '배치 중' : '배치'; b.disabled = i === S.slimeEq;
+    b.onclick = () => { S.slimeEq = i; update(); };
+    box.append(row);
+  });
+}
+function updateLab(){
+  const F = S.furnace, H = S.hatch, s = S.slimes[S.slimeEq];
+  for(const o in smeltBtns) smeltBtns[o].classList.toggle('primary', F.t === o);
+  $('#smeltBar').style.width = (F.busy ? Math.min(100, F.p / SMELT_TIME * 100) : 0) + '%';
+  $('#smeltInfo').textContent = !F.t ? '구울 광석을 선택하세요 (다시 누르면 정지)'
+    : F.busy ? `${ORES[F.job].n} 제련 중...`
+    : total(F.t) < 1 ? `${ORES[F.t].n}이(가) 부족합니다` : total('coal') < 1 ? '석탄이 부족합니다' : '대기 중';
+  $('#fxInfo').textContent = s ? `배치된 슬라임: ${EL[s.el].i} ${EL[s.el].n} ${'★'.repeat(s.pw)} - ${EL[s.el].d}` : '배치된 슬라임 없음 (알을 부화시켜 보세요)';
+  $('#eggInfo').textContent = `🥚 슬라임 알 ${S.eggs}개 (채굴 중 낮은 확률로 발견)`;
+  $('#hatchBtn').disabled = H.busy || S.eggs < 1; $('#hatchBtn').textContent = H.busy ? '부화 중...' : '부화 시작';
+  $('#hatchBar').style.width = (H.busy ? Math.min(100, H.p / HATCH_TIME * 100) : 0) + '%';
+  const sig = S.slimes.length + '|' + S.slimeEq;
+  if(sig !== slimeSig){ slimeSig = sig; renderSlimes(); }
+}
+
+// ===== UI (요소는 한 번만 만들고 값만 갱신) =====
+const rows = {}, cards = {};
+for(const id in ORES){
+  const o = ORES[id], row = document.createElement('div');
+  row.className = 'row'; row.hidden = true;
+  row.innerHTML = `<span class="ic">${o.i}</span><span class="nm">${o.n}</span><span class="ct"></span><button>판매</button>`;
+  row.querySelector('button').onclick = () => sell(id);
+  $('#inv').append(row); rows[id] = row;
+}
+const emptyMsg = document.createElement('div'); emptyMsg.className = 'dim'; emptyMsg.textContent = '비어 있음. 먼저 채굴해 보세요.';
+$('#inv').append(emptyMsg);
+
+PICKS.forEach((p, idx) => {
+  const el = document.createElement('div'); el.className = 'pick';
+  el.innerHTML = `<div class="top"><span class="ic">${p.i}</span><span class="nm">${p.n}</span><button></button></div><div class="dim info"></div><div class="enh tools" style="margin-top:6px;align-items:center" hidden><button class="en"></button><span class="dim enInfo"></span></div>`;
+  el.querySelector('button').onclick = () => S.owned[p.id] ? (S.equip = p.id, update()) : craft(p.id);
+  el.querySelector('.en').onclick = () => enhance(p.id);
+  $('#picks').append(el); cards[p.id] = el;
+});
+const costText = c => !c ? '무료' : `${fmt(c.gold)}G + ` + Object.keys(c.ore).map(o => `${ORES[o].n} ${c.ore[o]}`).join(', ');
+
+function update(){
+  $('#gold').textContent = fmt(S.gold);
+  $('#rate').textContent = rate().toFixed(2);
+  updateLab();
+  let any = false;
+  for(const id in ORES){
+    const t = total(id); rows[id].hidden = t === 0; if(t) any = true;
+    rows[id].querySelector('.ct').textContent = `${count(id,1)}  ★★:${count(id,2)}  ★★★:${count(id,3)}`;
+  }
+  emptyMsg.hidden = any;
+  PICKS.forEach((p, idx) => {
+    const el = cards[p.id], btn = el.querySelector('button'), st = S.owned[p.id], info = el.querySelector('.info');
+    el.classList.toggle('on', S.equip === p.id);
+    el.querySelector('.enh').hidden = !st;
+    if(st){
+      btn.textContent = S.equip === p.id ? '장착 중' : '장착'; btn.disabled = S.equip === p.id; btn.classList.remove('primary');
+      const l = st.lv || 0, e = ENH[l], en = el.querySelector('.en');
+      info.textContent = `+${l}  속도 +${Math.round((st.speed + ENH_SPEED*l)*100)}%  행운 +${((st.luck + ENH_LUCK*l)*100).toFixed(1)}%`;
+      en.textContent = e ? `강화 +${l+1} (${fmt(enhCost(idx,l))}G)` : '최대 강화'; en.disabled = !e || S.gold < enhCost(idx,l);
+      el.querySelector('.enInfo').textContent = e ? `성공 ${Math.round(e.ok*100)}%${e.br ? ' · 파괴 ' + Math.round(e.br*100) + '%' : ''}` : '';
+    }else{
+      const prevOwned = idx <= bestTier() + 1;
+      btn.textContent = '제작'; btn.disabled = !prevOwned || !afford(p.cost); btn.classList.toggle('primary', !btn.disabled);
+      info.textContent = prevOwned ? '필요: ' + costText(p.cost) : '이전 곡괭이를 먼저 제작하세요';
+    }
+  });
+}
+
+// ===== 이벤트 / 게임 루프 =====
+$('#pile').onclick = () => { mineOnce(); update(); };
+
+$('#sellAll').onclick = () => { for(const id in ORES) sell(id); };
+$('#reset').onclick = () => { if(confirm('모든 진행 상황이 삭제됩니다. 초기화할까요?')){ S = fresh(); save(); update(); } };
+
+// 오프라인 진행: 마지막 저장 시각과의 차이로 계산
+const away = Math.min((Date.now() - S.saved) / 1000, OFFLINE_CAP);
+if(away > 5){
+  const n = Math.floor(rate() * away);
+  for(let i = 0; i < n; i++) mineOnce(true);
+  if(n) $('#drop').textContent = `자리를 비운 ${Math.round(away/60)}분 동안 ${n}개를 채굴했습니다`;
+}
+
+for(let t = 0; t < away; t++) advance(1);   // 오프라인 동안 제련/부화도 진행
+let prev = performance.now();
+setInterval(() => {                       // 델타타임 기반 자동 채굴
+  const now = performance.now(), dt = Math.min((now - prev) / 1000, 60); prev = now;
+  S.acc += rate() * dt;
+  while(S.acc >= 1){ S.acc -= 1; mineOnce(); }
+  advance(dt);
+  update();
+}, 100);
+setInterval(save, 5000);
+addEventListener('beforeunload', save);
+update();
+</script>
+</body>
+</html>
